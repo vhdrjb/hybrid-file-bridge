@@ -28,6 +28,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.error import TimedOut
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -116,6 +117,21 @@ def generate_password(length: int = 16) -> str:
             and any(c in "@#$%&*!?+=" for c in password)
         ):
             return password
+
+
+async def safe_edit_text(msg, text: str, **kwargs) -> None:
+    """Safely edit a message, catching Telegram API timeouts.
+
+    Telegram's default read timeout (10s) is too short for our use case.
+    If the API call times out, we log it and move on — the actual work
+    (download, archive, upload) continues regardless of status updates.
+    """
+    try:
+        await msg.edit_text(text, **kwargs)
+    except TimedOut:
+        logger.warning("Telegram edit_text timed out (message still updated server-side)")
+    except Exception as e:
+        logger.warning("Failed to edit status message: %s", e)
 
 
 def extract_url(text: str) -> str | None:
@@ -210,7 +226,7 @@ async def process_downloaded_file(
 
     if file_size_mb <= SINGLE_UPLOAD_MAX_MB:
         # Single file upload path
-        await status_msg.edit_text(f"📦 Creating archive ({file_size_mb:.1f} MB)...")
+        await safe_edit_text(status_msg, f"📦 Creating archive ({file_size_mb:.1f} MB)...")
 
         output_rar = temp_path / f"{downloaded_file.stem}.rar"
         await create_rar_archive(
@@ -219,7 +235,7 @@ async def process_downloaded_file(
             password=password,
         )
 
-        await status_msg.edit_text("📤 Uploading to provider...")
+        await safe_edit_text(status_msg, "📤 Uploading to provider...")
         result = await upload_with_fallback(output_rar)
 
         reply = (
@@ -240,9 +256,10 @@ async def process_downloaded_file(
     else:
         # Multi-part upload path
         num_parts = int(file_size_mb / RAR_VOLUME_SIZE_MB) + 1
-        await status_msg.edit_text(
+        await safe_edit_text(
+            status_msg,
             f"📦 Creating {num_parts}-part archive "
-            f"({file_size_mb:.1f} MB, {RAR_VOLUME_SIZE_MB:.0f} MB/part)..."
+            f"({file_size_mb:.1f} MB, {RAR_VOLUME_SIZE_MB:.0f} MB/part)...",
         )
 
         parts_dir = temp_path / "parts"
@@ -257,7 +274,7 @@ async def process_downloaded_file(
 
         links = []
         for i, part_file in enumerate(part_files, 1):
-            await status_msg.edit_text(f"📤 Uploading part {i}/{len(part_files)}...")
+            await safe_edit_text(status_msg, f"📤 Uploading part {i}/{len(part_files)}...")
             result = await upload_with_fallback(part_file)
             links.append((result.url, result.provider, part_file.name))
             logger.info(
@@ -293,7 +310,7 @@ async def process_downloaded_file(
             f"{format_extraction_guide(password, is_multi=True)}"
         )
 
-    await status_msg.edit_text(reply, parse_mode="Markdown")
+    await safe_edit_text(status_msg, reply, parse_mode="Markdown")
     logger.info(
         "Successfully processed %s (%.2f MB)",
         downloaded_file.name,
@@ -380,21 +397,25 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             await process_downloaded_file(downloaded_file, status_msg, password, temp_path)
 
         except FileNotFoundError as e:
-            await status_msg.edit_text(f"❌ File not found: {e}")
+            await safe_edit_text(status_msg, f"❌ File not found: {e}")
             logger.error("FileNotFound for user %d: %s", user.id, e)
 
         except RuntimeError as e:
-            await status_msg.edit_text(f"❌ Error: {e}")
+            await safe_edit_text(status_msg, f"❌ Error: {e}")
             logger.error("RuntimeError for user %d: %s", user.id, e)
 
         except asyncio.TimeoutError:
-            await status_msg.edit_text(
-                "❌ Download timed out. The server may be slow " "or the link may be invalid."
+            await safe_edit_text(
+                status_msg,
+                "❌ Download timed out. The server may be slow " "or the link may be invalid.",
             )
             logger.error("TimeoutError for user %d", user.id)
 
         except Exception as e:
-            await status_msg.edit_text("❌ An unexpected error occurred. Please try again later.")
+            await safe_edit_text(
+                status_msg,
+                "❌ An unexpected error occurred. Please try again later.",
+            )
             logger.exception(
                 "Unexpected error for user %d processing %s: %s",
                 user.id,
@@ -499,18 +520,22 @@ async def _handle_youtube_url(
         )
 
     except RuntimeError as e:
-        await status_msg.edit_text(f"❌ YouTube error: {e}")
+        await safe_edit_text(status_msg, f"❌ YouTube error: {e}")
         logger.error("YouTube info error for user %d: %s", user.id, e)
 
     except asyncio.TimeoutError:
-        await status_msg.edit_text(
+        await safe_edit_text(
+            status_msg,
             "❌ Timed out while fetching video info. "
-            "The video may not exist or YouTube may be blocked."
+            "The video may not exist or YouTube may be blocked.",
         )
         logger.error("YouTube info timeout for user %d", user.id)
 
     except Exception as e:
-        await status_msg.edit_text("❌ An unexpected error occurred while fetching video info.")
+        await safe_edit_text(
+            status_msg,
+            "❌ An unexpected error occurred while fetching video info.",
+        )
         logger.exception(
             "Unexpected error for user %d fetching YouTube info: %s",
             user.id,
@@ -631,23 +656,25 @@ async def handle_youtube_quality_callback(
             context.user_data.pop("yt_formats", None)
 
         except FileNotFoundError as e:
-            await query.edit_message_text(f"❌ File not found: {e}")
+            await safe_edit_text(query, f"❌ File not found: {e}")
             logger.error("FileNotFound for user %d: %s", user.id, e)
 
         except RuntimeError as e:
-            await query.edit_message_text(f"❌ Error: {e}")
+            await safe_edit_text(query, f"❌ Error: {e}")
             logger.error("RuntimeError for user %d: %s", user.id, e)
 
         except asyncio.TimeoutError:
-            await query.edit_message_text(
+            await safe_edit_text(
+                query,
                 "❌ YouTube download timed out. The video may be too large "
-                "or your VPS connection may be slow."
+                "or your VPS connection may be slow.",
             )
             logger.error("YouTube download timeout for user %d", user.id)
 
         except Exception as e:
-            await query.edit_message_text(
-                "❌ An unexpected error occurred. Please try again later."
+            await safe_edit_text(
+                query,
+                "❌ An unexpected error occurred. Please try again later.",
             )
             logger.exception(
                 "Unexpected error for user %d YouTube download: %s",
@@ -679,12 +706,27 @@ def main() -> None:
     logger.info("Single upload max: %d MB", int(SINGLE_UPLOAD_MAX_MB))
     logger.info("RAR volume size: %d MB", int(RAR_VOLUME_SIZE_MB))
 
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).concurrent_updates(True).build()
+    application = (
+        Application.builder()
+        .token(TELEGRAM_BOT_TOKEN)
+        .concurrent_updates(True)
+        .read_timeout(60)
+        .write_timeout(60)
+        .connect_timeout(30)
+        .get_updates_timeout(60)
+        .build()
+    )
 
     # Register handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link))
     application.add_handler(CallbackQueryHandler(handle_youtube_quality_callback))
+
+    # Global error handler — prevents unhandled exceptions from crashing the bot
+    async def global_error_handler(update, context) -> None:
+        logger.error("Unhandled exception: %s", context.error, exc_info=context.error)
+
+    application.add_error_handler(global_error_handler)
 
     logger.info("Bot is running. Press Ctrl+C to stop.")
 
