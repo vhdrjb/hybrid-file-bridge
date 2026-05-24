@@ -127,8 +127,8 @@ def extract_url(text: str) -> str | None:
 def is_authorized(user_id: int) -> bool:
     """Check if a Telegram user ID is in the authorized list.
 
-    If no authorized users are configured (empty list), access is
-    denied for security.
+    Reads the AUTHORIZED_USERS environment variable at call time
+    so that tests can override it via monkeypatch.
 
     Args:
         user_id: The Telegram user ID to check.
@@ -136,9 +136,15 @@ def is_authorized(user_id: int) -> bool:
     Returns:
         True if the user is authorized, False otherwise.
     """
-    if not AUTHORIZED_USERS:
+    authorized_str = os.getenv("AUTHORIZED_USERS", "")
+    authorized_users = [
+        int(uid.strip())
+        for uid in authorized_str.split(",")
+        if uid.strip().isdigit()
+    ]
+    if not authorized_users:
         return False
-    return user_id in AUTHORIZED_USERS
+    return user_id in authorized_users
 
 
 def format_extraction_guide(password: str, is_multi: bool = False) -> str:
