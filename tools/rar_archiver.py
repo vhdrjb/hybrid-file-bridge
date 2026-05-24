@@ -129,7 +129,14 @@ async def split_rar_volumes(
         base_name = Path(output_name).stem
 
     output_base = output_dir / base_name
-    volume_str = f"{int(volume_mb)}m"
+    # Apply safety margin: RAR volumes can exceed -v size due to block
+    # alignment.  Use 90 % of the requested size so that even with
+    # overhead the actual part stays under the upload limit.
+    safety_margin = 0.90
+    effective_volume_mb = int(volume_mb * safety_margin)
+    if effective_volume_mb < 1:
+        effective_volume_mb = 1
+    volume_str = f"{effective_volume_mb}m"
 
     cmd = [
         "rar",

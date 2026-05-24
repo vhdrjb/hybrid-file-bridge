@@ -79,9 +79,10 @@ def get_providers() -> list[ProviderConfig]:
     from tools.parsaspace_uploader import upload as parsaspace_upload
     from tools.picofile_uploader import upload as picofile_upload
 
-    # Bale HTTP API nginx limit is ~50 MB; the balebot SDK may support more
-    # but since we currently use the HTTP fallback, 50 MB is the safe limit.
-    bale_max = float(os.getenv("BALE_MAX_UPLOAD_MB", "50"))
+    # Bale HTTP API nginx limit is ~50 MB; we set the default to 45 MB to
+    # account for RAR volume overhead (the archiver applies a 90 % safety
+    # margin on top, so the actual RAR -v flag will be ~40m).
+    bale_max = float(os.getenv("BALE_MAX_UPLOAD_MB", "45"))
     eitaa_max = float(os.getenv("EITAA_MAX_UPLOAD_MB", "50"))
     parsaspace_max = float(os.getenv("PARSASPACE_MAX_UPLOAD_MB", "51200"))
     arvan_max = float(os.getenv("ARVAN_MAX_UPLOAD_MB", "5120"))
