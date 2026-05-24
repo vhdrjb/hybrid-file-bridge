@@ -2,13 +2,18 @@
 Upload manager with automatic provider fallback.
 
 This module orchestrates file uploads across multiple Iranian file-sharing
-providers (Bale, Eitaa, ParsaSpace). It implements a priority-based
-fallback system: providers are tried in the order specified by the
-PROVIDER_PRIORITY environment variable. If a provider fails or the file
-exceeds its size limit, the next provider is tried automatically.
+providers (Bale, Eitaa, ParsaSpace, ArvanCloud, Liara, PicoFile).  It
+implements a priority-based fallback system: providers are tried in the
+order specified by the PROVIDER_PRIORITY environment variable.  If a
+provider fails or the file exceeds its size limit, the next provider is
+tried automatically.
 
 This design ensures maximum reliability — even if one provider is down
 or has restrictions, the user still receives their download link.
+
+Before each upload attempt the manager runs inline cleanup for providers
+that have a ``*_VALID_DAYS`` configuration, deleting objects older than
+the specified number of days.
 
 Configuration (via environment variables):
     PROVIDER_PRIORITY: Comma-separated list of provider names in priority order.
@@ -67,15 +72,21 @@ def get_providers() -> list[ProviderConfig]:
     Returns:
         List of ProviderConfig objects sorted by priority.
     """
+    from tools.arvan_uploader import upload as arvan_upload
     from tools.bale_uploader import upload as bale_upload
     from tools.eitaa_uploader import upload as eitaa_upload
+    from tools.liara_uploader import upload as liara_upload
     from tools.parsaspace_uploader import upload as parsaspace_upload
+    from tools.picofile_uploader import upload as picofile_upload
 
     # Bale HTTP API nginx limit is ~50 MB; the balebot SDK may support more
     # but since we currently use the HTTP fallback, 50 MB is the safe limit.
     bale_max = float(os.getenv("BALE_MAX_UPLOAD_MB", "50"))
     eitaa_max = float(os.getenv("EITAA_MAX_UPLOAD_MB", "50"))
     parsaspace_max = float(os.getenv("PARSASPACE_MAX_UPLOAD_MB", "51200"))
+    arvan_max = float(os.getenv("ARVAN_MAX_UPLOAD_MB", "5120"))
+    liara_max = float(os.getenv("LIARA_MAX_UPLOAD_MB", "5120"))
+    picofile_max = float(os.getenv("PICOFILE_MAX_UPLOAD_MB", "2048"))
 
     all_providers = {
         "Bale": ProviderConfig(
@@ -96,9 +107,27 @@ def get_providers() -> list[ProviderConfig]:
             max_size_mb=parsaspace_max,
             env_required=["PARSASPACE_TOKEN", "PARSASPACE_DOMAIN"],
         ),
+        "ArvanCloud": ProviderConfig(
+            name="ArvanCloud",
+            upload_func=arvan_upload,
+            max_size_mb=arvan_max,
+            env_required=["ARVAN_ACCESS_KEY", "ARVAN_SECRET_KEY", "ARVAN_BUCKET"],
+        ),
+        "Liara": ProviderConfig(
+            name="Liara",
+            upload_func=liara_upload,
+            max_size_mb=liara_max,
+            env_required=["LIARA_API_KEY", "LIARA_BUCKET"],
+        ),
+        "PicoFile": ProviderConfig(
+            name="PicoFile",
+            upload_func=picofile_upload,
+            max_size_mb=picofile_max,
+            env_required=["PICOFILE_EMAIL", "PICOFILE_PASSWORD"],
+        ),
     }
 
-    priority_str = os.getenv("PROVIDER_PRIORITY", "Bale,Eitaa,ParsaSpace")
+    priority_str = os.getenv("PROVIDER_PRIORITY", "ArvanCloud,Liara,ParsaSpace,Bale,Eitaa,PicoFile")
     priority_list = [p.strip() for p in priority_str.split(",")]
 
     ordered = []
@@ -198,6 +227,14 @@ async def upload_with_fallback(file_path: Path) -> UploadResult:
                 f"({file_size_mb:.1f} MB > {provider.max_size_mb} MB limit)"
             )
             continue
+
+        # Run inline cleanup before uploading
+        try:
+            from tools.file_cleaner import maybe_cleanup
+
+            await maybe_cleanup(provider.name)
+        except Exception as cleanup_err:
+            logger.warning("Cleanup skipped for %s: %s", provider.name, cleanup_err)
 
         attempted.append(provider.name)
         logger.info("Attempting upload to '%s' (%.2f MB)", provider.name, file_size_mb)

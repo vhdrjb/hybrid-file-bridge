@@ -38,7 +38,7 @@ class TestGetProviders:
         monkeypatch.setenv("PROVIDER_PRIORITY", "Eitaa,Bale,ParsaSpace")
         providers = get_providers()
         names = [p.name for p in providers]
-        assert names == ["Eitaa", "Bale", "ParsaSpace"]
+        assert names[:3] == ["Eitaa", "Bale", "ParsaSpace"]
 
     def test_handles_unknown_providers(self, mock_env, monkeypatch):
         """Test that unknown provider names in priority are skipped."""
@@ -54,7 +54,7 @@ class TestGetProviders:
         providers = get_providers()
         names = [p.name for p in providers]
         assert names[0] == "ParsaSpace"
-        assert len(names) == 3  # All three should be present
+        assert len(names) == 6  # All six providers should be present
 
 
 class TestIsProviderConfigured:

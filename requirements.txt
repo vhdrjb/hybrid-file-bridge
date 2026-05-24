@@ -1,7 +1,9 @@
 python-telegram-bot==20.7
 python-dotenv
 requests
+boto3
 yt-dlp
+python-dateutil
 pytest
 pytest-asyncio
 pytest-mock
