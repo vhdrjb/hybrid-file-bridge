@@ -40,7 +40,12 @@ from telegram.ext import (
 
 from tools.downloader import download_file, extract_filename_from_url
 from tools.rar_archiver import create_rar_archive, split_rar_volumes
-from tools.upload_manager import upload_with_fallback
+from tools.upload_manager import (
+    UploadError,
+    get_effective_max_upload_mb,
+    is_413_error,
+    upload_with_fallback,
+)
 from tools.youtube_downloader import (
     VideoFormat,
     download_video,
@@ -222,9 +227,20 @@ async def process_downloaded_file(
     """
     file_size_mb = downloaded_file.stat().st_size / MB
 
-    logger.info("Processing: %s (%.2f MB)", downloaded_file.name, file_size_mb)
+    # Determine the real upload limit from configured providers.
+    # If no provider is configured, fall back to SINGLE_UPLOAD_MAX_MB.
+    provider_limit = get_effective_max_upload_mb()
+    effective_limit = min(SINGLE_UPLOAD_MAX_MB, provider_limit)
 
-    if file_size_mb <= SINGLE_UPLOAD_MAX_MB:
+    logger.info(
+        "Processing: %s (%.2f MB) — provider limit: %.0f MB",
+        downloaded_file.name,
+        file_size_mb,
+        provider_limit,
+    )
+
+    # Decide single vs split based on the *actual* provider limit
+    if file_size_mb <= effective_limit:
         # Single file upload path
         await safe_edit_text(status_msg, f"📦 Creating archive ({file_size_mb:.1f} MB)...")
 
@@ -236,7 +252,31 @@ async def process_downloaded_file(
         )
 
         await safe_edit_text(status_msg, "📤 Uploading to provider...")
-        result = await upload_with_fallback(output_rar)
+        try:
+            result = await upload_with_fallback(output_rar)
+        except UploadError as exc:
+            # If the upload failed with 413, the provider limit may be
+            # wrong — retry with automatic volume splitting.
+            if is_413_error(exc) or any(is_413_error(RuntimeError(e)) for e in exc.errors):
+                logger.info(
+                    "Upload returned 413, auto-splitting into volumes of %.0f MB",
+                    provider_limit,
+                )
+                await safe_edit_text(
+                    status_msg,
+                    f"📦 File too large for single upload, splitting into "
+                    f"volumes of {provider_limit:.0f} MB...",
+                )
+                reply = await _upload_as_volumes(
+                    downloaded_file=downloaded_file,
+                    status_msg=status_msg,
+                    password=password,
+                    temp_path=temp_path,
+                    volume_mb=provider_limit,
+                )
+                await safe_edit_text(status_msg, reply, parse_mode="Markdown")
+                return
+            raise
 
         reply = (
             f"✅ **File Ready!**\n\n"
@@ -255,59 +295,12 @@ async def process_downloaded_file(
 
     else:
         # Multi-part upload path
-        num_parts = int(file_size_mb / RAR_VOLUME_SIZE_MB) + 1
-        await safe_edit_text(
-            status_msg,
-            f"📦 Creating {num_parts}-part archive "
-            f"({file_size_mb:.1f} MB, {RAR_VOLUME_SIZE_MB:.0f} MB/part)...",
-        )
-
-        parts_dir = temp_path / "parts"
-        parts_dir.mkdir()
-
-        part_files = await split_rar_volumes(
-            input_path=downloaded_file,
-            output_dir=parts_dir,
-            volume_mb=RAR_VOLUME_SIZE_MB,
+        reply = await _upload_as_volumes(
+            downloaded_file=downloaded_file,
+            status_msg=status_msg,
             password=password,
-        )
-
-        links = []
-        for i, part_file in enumerate(part_files, 1):
-            await safe_edit_text(status_msg, f"📤 Uploading part {i}/{len(part_files)}...")
-            result = await upload_with_fallback(part_file)
-            links.append((result.url, result.provider, part_file.name))
-            logger.info(
-                "Part %d/%d uploaded via %s",
-                i,
-                len(part_files),
-                result.provider,
-            )
-
-            # Clean up each part after upload
-            try:
-                part_file.unlink()
-            except OSError:
-                pass
-
-        # Clean up original download
-        try:
-            downloaded_file.unlink()
-        except OSError:
-            pass
-
-        # Build multi-part reply
-        links_text = "\n".join(
-            f"  {i + 1}. [{p[2]}]({p[0]}) via {p[1]}" for i, p in enumerate(links)
-        )
-
-        reply = (
-            f"✅ **File Ready (Multi-Part Archive)!**\n\n"
-            f"📄 File: `{downloaded_file.name}`\n"
-            f"📊 Size: {file_size_mb:.1f} MB\n"
-            f"📦 Parts: {len(links)} × {RAR_VOLUME_SIZE_MB:.0f} MB\n\n"
-            f"🔗 **Download Links:**\n{links_text}\n\n"
-            f"{format_extraction_guide(password, is_multi=True)}"
+            temp_path=temp_path,
+            volume_mb=provider_limit,
         )
 
     await safe_edit_text(status_msg, reply, parse_mode="Markdown")
@@ -315,6 +308,90 @@ async def process_downloaded_file(
         "Successfully processed %s (%.2f MB)",
         downloaded_file.name,
         file_size_mb,
+    )
+
+
+async def _upload_as_volumes(
+    downloaded_file: Path,
+    status_msg,
+    password: str,
+    temp_path: Path,
+    volume_mb: float,
+) -> str:
+    """Create split RAR volumes, upload each, and return the reply text.
+
+    Args:
+        downloaded_file: Path to the file that was downloaded.
+        status_msg: The Telegram message to edit with status updates.
+        password: The RAR encryption password.
+        temp_path: Temporary working directory for this job.
+        volume_mb: Maximum size of each volume in megabytes.
+
+    Returns:
+        Formatted reply string with download links.
+    """
+    file_size_mb = downloaded_file.stat().st_size / MB
+    num_parts = int(file_size_mb / volume_mb) + 1
+
+    await safe_edit_text(
+        status_msg,
+        f"📦 Creating {num_parts}-part archive "
+        f"({file_size_mb:.1f} MB, {volume_mb:.0f} MB/part)...",
+    )
+
+    parts_dir = temp_path / "parts"
+    parts_dir.mkdir()
+
+    part_files = await split_rar_volumes(
+        input_path=downloaded_file,
+        output_dir=parts_dir,
+        volume_mb=volume_mb,
+        password=password,
+    )
+
+    links = []
+    for i, part_file in enumerate(part_files, 1):
+        await safe_edit_text(status_msg, f"📤 Uploading part {i}/{len(part_files)}...")
+        result = await upload_with_fallback(part_file)
+        links.append((result.url, result.provider, part_file.name))
+        logger.info(
+            "Part %d/%d uploaded via %s",
+            i,
+            len(part_files),
+            result.provider,
+        )
+
+        # Clean up each part after upload
+        try:
+            part_file.unlink()
+        except OSError:
+            pass
+
+    # Clean up original download
+    try:
+        downloaded_file.unlink()
+    except OSError:
+        pass
+
+    # Build multi-part reply
+    links_text = "\n".join(
+        f"  {i + 1}. [{p[2]}]({p[0]}) via {p[1]}" for i, p in enumerate(links)
+    )
+
+    logger.info(
+        "Successfully processed %s (%.2f MB) in %d parts",
+        downloaded_file.name,
+        file_size_mb,
+        len(links),
+    )
+
+    return (
+        f"✅ **File Ready (Multi-Part Archive)!**\n\n"
+        f"📄 File: `{downloaded_file.name}`\n"
+        f"📊 Size: {file_size_mb:.1f} MB\n"
+        f"📦 Parts: {len(links)} × {volume_mb:.0f} MB\n\n"
+        f"🔗 **Download Links:**\n{links_text}\n\n"
+        f"{format_extraction_guide(password, is_multi=True)}"
     )
 
 
@@ -656,24 +733,22 @@ async def handle_youtube_quality_callback(
             context.user_data.pop("yt_formats", None)
 
         except FileNotFoundError as e:
-            await safe_edit_text(query, f"❌ File not found: {e}")
+            await query.edit_message_text(f"❌ File not found: {e}")
             logger.error("FileNotFound for user %d: %s", user.id, e)
 
         except RuntimeError as e:
-            await safe_edit_text(query, f"❌ Error: {e}")
+            await query.edit_message_text(f"❌ Error: {e}")
             logger.error("RuntimeError for user %d: %s", user.id, e)
 
         except asyncio.TimeoutError:
-            await safe_edit_text(
-                query,
+            await query.edit_message_text(
                 "❌ YouTube download timed out. The video may be too large "
                 "or your VPS connection may be slow.",
             )
             logger.error("YouTube download timeout for user %d", user.id)
 
         except Exception as e:
-            await safe_edit_text(
-                query,
+            await query.edit_message_text(
                 "❌ An unexpected error occurred. Please try again later.",
             )
             logger.exception(

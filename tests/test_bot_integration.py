@@ -205,7 +205,8 @@ class TestHandleLinkHandler:
             with patch("bot.create_rar_archive", mock_archive):
                 with patch("bot.upload_with_fallback", mock_upload):
                     with patch("bot.DOWNLOADS_DIR", downloads):
-                        await handle_link(update, context)
+                        with patch("bot.get_effective_max_upload_mb", return_value=450.0):
+                            await handle_link(update, context)
 
         # Verify edit_text was called with status updates
         edit_calls = update.message.edit_text.call_args_list
@@ -425,7 +426,8 @@ class TestYoutubeQualityCallback:
         mock_download = AsyncMock(side_effect=RuntimeError("yt-dlp download failed"))
 
         with patch("bot.download_video", mock_download):
-            await handle_youtube_quality_callback(update, context)
+            with patch("bot.get_effective_max_upload_mb", return_value=450.0):
+                await handle_youtube_quality_callback(update, context)
 
         args = update.callback_query.edit_message_text.call_args_list[-1]
         assert "Error" in str(args)

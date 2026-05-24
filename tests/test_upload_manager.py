@@ -12,8 +12,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from tools.upload_manager import (
+    UploadError,
     UploadResult,
+    get_effective_max_upload_mb,
     get_providers,
+    is_413_error,
     is_provider_configured,
     upload_with_fallback,
 )
@@ -273,3 +276,109 @@ class TestUploadResult:
         assert result.provider == "Bale"
         assert result.file_name == "file.rar"
         assert result.file_size_mb == 10.5
+
+
+class TestUploadError:
+    """Tests for the UploadError exception class."""
+
+    def test_upload_error_is_runtime_error(self):
+        """Test that UploadError extends RuntimeError."""
+        exc = UploadError(
+            file_path=Path("test.rar"),
+            file_size_mb=100.0,
+            attempted=["Bale"],
+            errors=["Bale: 413 error"],
+        )
+        assert isinstance(exc, RuntimeError)
+
+    def test_upload_error_message(self):
+        """Test that UploadError contains file info in its message."""
+        exc = UploadError(
+            file_path=Path("big_file.rar"),
+            file_size_mb=438.17,
+            attempted=["Bale"],
+            errors=["Bale: HTTP 413"],
+        )
+        assert "big_file.rar" in str(exc)
+        assert "438.17" in str(exc)
+        assert "413" in str(exc)
+
+    def test_upload_error_attributes(self):
+        """Test that UploadError stores structured attributes."""
+        exc = UploadError(
+            file_path=Path("test.rar"),
+            file_size_mb=50.0,
+            attempted=["Bale", "Eitaa"],
+            errors=["Bale: down", "Eitaa: down"],
+        )
+        assert exc.file_size_mb == 50.0
+        assert exc.attempted == ["Bale", "Eitaa"]
+        assert len(exc.errors) == 2
+
+
+class TestIs413Error:
+    """Tests for the is_413_error helper function."""
+
+    def test_detects_413_status_code(self):
+        """Test detection of HTTP 413 status code in error message."""
+        assert is_413_error(RuntimeError("Bale HTTP API returned status 413: <html>")) is True
+
+    def test_detects_entity_too_large(self):
+        """Test detection of 'entity too large' in error message."""
+        assert is_413_error(RuntimeError("entity too large")) is True
+
+    def test_detects_request_entity_too_large(self):
+        """Test detection of 'request entity too large' in error message."""
+        assert is_413_error(RuntimeError("413 Request Entity Too Large")) is True
+
+    def test_not_413_for_other_errors(self):
+        """Test that non-413 errors are not flagged."""
+        assert is_413_error(RuntimeError("Connection refused")) is False
+        assert is_413_error(RuntimeError("500 Internal Server Error")) is False
+        assert is_413_error(RuntimeError("timeout")) is False
+
+
+class TestGetEffectiveMaxUploadMb:
+    """Tests for get_effective_max_upload_mb function."""
+
+    def test_returns_min_of_configured_providers(self):
+        """Test that the smallest configured provider limit is returned."""
+        with patch(
+            "tools.upload_manager.get_providers",
+            return_value=[
+                _make_mock_provider("Bale", "url", 50),
+                _make_mock_provider("ParsaSpace", "url", 51200),
+            ],
+        ):
+            with patch(
+                "tools.upload_manager.is_provider_configured",
+                return_value=True,
+            ):
+                assert get_effective_max_upload_mb() == 50.0
+
+    def test_returns_default_when_no_provider_configured(self):
+        """Test that 50 MB is returned when no provider is configured."""
+        with patch(
+            "tools.upload_manager.get_providers",
+            return_value=[_make_mock_provider("Bale", "url", 50)],
+        ):
+            with patch(
+                "tools.upload_manager.is_provider_configured",
+                return_value=False,
+            ):
+                assert get_effective_max_upload_mb() == 50.0
+
+    def test_uses_env_var_for_bale_limit(self, monkeypatch):
+        """Test that BALE_MAX_UPLOAD_MB env var is respected."""
+        monkeypatch.setenv("BALE_MAX_UPLOAD_MB", "100")
+        # Force re-import to pick up the env var
+        import importlib
+        import tools.upload_manager
+        importlib.reload(tools.upload_manager)
+        try:
+            providers = tools.upload_manager.get_providers()
+            bale = next(p for p in providers if p.name == "Bale")
+            assert bale.max_size_mb == 100.0
+        finally:
+            monkeypatch.delenv("BALE_MAX_UPLOAD_MB", raising=False)
+            importlib.reload(tools.upload_manager)

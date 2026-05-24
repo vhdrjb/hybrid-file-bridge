@@ -71,23 +71,29 @@ def get_providers() -> list[ProviderConfig]:
     from tools.eitaa_uploader import upload as eitaa_upload
     from tools.parsaspace_uploader import upload as parsaspace_upload
 
+    # Bale HTTP API nginx limit is ~50 MB; the balebot SDK may support more
+    # but since we currently use the HTTP fallback, 50 MB is the safe limit.
+    bale_max = float(os.getenv("BALE_MAX_UPLOAD_MB", "50"))
+    eitaa_max = float(os.getenv("EITAA_MAX_UPLOAD_MB", "50"))
+    parsaspace_max = float(os.getenv("PARSASPACE_MAX_UPLOAD_MB", "51200"))
+
     all_providers = {
         "Bale": ProviderConfig(
             name="Bale",
             upload_func=bale_upload,
-            max_size_mb=2 * 1024,  # ~2 GB
+            max_size_mb=bale_max,
             env_required=["BALE_BOT_TOKEN", "BALE_CHAT_ID"],
         ),
         "Eitaa": ProviderConfig(
             name="Eitaa",
             upload_func=eitaa_upload,
-            max_size_mb=2 * 1024,  # ~2 GB
+            max_size_mb=eitaa_max,
             env_required=["EITAA_BOT_TOKEN", "EITAA_CHAT_ID"],
         ),
         "ParsaSpace": ProviderConfig(
             name="ParsaSpace",
             upload_func=parsaspace_upload,
-            max_size_mb=50 * 1024,  # ~50 GB
+            max_size_mb=parsaspace_max,
             env_required=["PARSASPACE_TOKEN", "PARSASPACE_DOMAIN"],
         ),
     }
@@ -222,9 +228,63 @@ async def upload_with_fallback(file_path: Path) -> UploadResult:
         )
 
     error_summary = "; ".join(errors)
-    raise RuntimeError(
-        f"All upload providers failed for {file_path.name} "
-        f"({file_size_mb:.2f} MB). "
-        f"Attempted: {', '.join(attempted)}. "
-        f"Errors: {error_summary}"
+    raise UploadError(
+        file_path=file_path,
+        file_size_mb=file_size_mb,
+        attempted=attempted,
+        errors=errors,
     )
+
+
+def get_effective_max_upload_mb() -> float:
+    """Return the smallest max_size_mb across all configured providers.
+
+    This is used by the pipeline to decide whether a file should be
+    split into volumes before uploading.  If no provider is configured,
+    returns a conservative default of 50 MB.
+
+    Returns:
+        Maximum file size in MB that can be uploaded in a single piece.
+    """
+    providers = get_providers()
+    configured = [p for p in providers if is_provider_configured(p)]
+    if not configured:
+        return 50.0
+    return min(p.max_size_mb for p in configured)
+
+
+def is_413_error(exc: Exception) -> bool:
+    """Check whether an exception indicates an HTTP 413 (entity too large).
+
+    This is used by the pipeline to trigger automatic volume splitting
+    when a provider rejects a file for being too large.
+    """
+    msg = str(exc).lower()
+    return "413" in msg or "entity too large" in msg or "request entity too large" in msg
+
+
+class UploadError(RuntimeError):
+    """Raised when all upload providers have failed.
+
+    Carries structured information so callers (e.g. the pipeline) can
+    inspect the failure and decide whether to retry with splitting.
+    """
+
+    def __init__(
+        self,
+        file_path: Path,
+        file_size_mb: float,
+        attempted: list[str],
+        errors: list[str],
+    ) -> None:
+        self.file_path = file_path
+        self.file_size_mb = file_size_mb
+        self.attempted = attempted
+        self.errors = errors
+        error_summary = "; ".join(errors)
+        super().__init__(
+            f"All upload providers failed for {file_path.name} "
+            f"({file_size_mb:.2f} MB). "
+            f"Attempted: {', '.join(attempted)}. "
+            f"Errors: {error_summary}"
+        )
