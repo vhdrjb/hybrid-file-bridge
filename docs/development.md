@@ -16,18 +16,19 @@ This document covers the architecture, design decisions, and technical details o
 │  Download    │ ←──────────── │                                    ▼         │
 │  Link + Pass │ ──────────>  │  ┌─────────────────────────────────────┐    │
 └──────────────┘              │  │        Upload Manager               │    │
-                              │  │  ┌───────┐ ┌──────┐ ┌───────────┐ │    │
-                              │  │  │ Bale  │ │Eitaa │ │ParsaSpace │ │    │
-                              │  │  └───┬───┘ └──┬───┘ └─────┬─────┘ │    │
-                              │  │      └───────┴───────────┘       │    │
+                              │  │  ┌──────┐ ┌────┐ ┌────┐        │    │
+                              │  │  │Arvan │ │Liara│ │Pico│...   │    │
+                              │  │  └──┬───┘ └──┬─┘ └─┬──┘        │    │
+                              │  │     └───────┴──────┘          │    │
                               │  └─────────────────────────────────────┘    │
                               └─────────────────────────────────────────────┘
                                         │
                                         ▼
                               ┌──────────────────────┐
-                              │  Iranian Providers    │
-                              │  (Bale, Eitaa,       │
-                              │   ParsaSpace)        │
+                              │  Upload Providers     │
+                              │  ArvanCloud | Liara   │
+                              │  PicoFile | ParsaSpace│
+                              │  Bale | Eitaa        │
                               └──────────────────────┘
 ```
 
@@ -86,7 +87,7 @@ The central upload coordinator:
 - Implements sequential fallback: try next provider on failure
 - Returns rich `UploadResult` with metadata
 
-### Uploaders (`bale_uploader.py`, `eitaa_uploader.py`, `parsaspace_uploader.py`)
+### Uploaders
 
 Each uploader follows a consistent interface: `async upload(file_path: Path) -> str`
 
@@ -95,6 +96,19 @@ All uploaders:
 - Check for required environment variables
 - Provide HTTP API fallbacks when SDK packages are not installed
 - Raise descriptive exceptions on failure
+
+| Module | Provider | Method | Max Size | Direct URLs | Cleanup |
+|---|---|---|---|---|---|
+| `arvan_uploader.py` | ArvanCloud | S3 (boto3) | 5 GB | Yes | Yes |
+| `liara_uploader.py` | Liara | Presigned URL | 5 GB | Yes | Yes |
+| `picofile_uploader.py` | PicoFile | Web API (reverse-engineered) | 2 GB | Yes | Yes |
+| `parsaspace_uploader.py` | ParsaSpace | REST API | 50 GB | Yes | No |
+| `bale_uploader.py` | Bale | Bot HTTP API | ~45 MB | No (channel) | No |
+| `eitaa_uploader.py` | Eitaa | Bot HTTP API | ~50 MB | Yes (file ID) | No |
+
+### `tools/file_cleaner.py` — Automatic File Cleanup
+
+Coordinates age-based cleanup for providers that support it (ArvanCloud, Liara, PicoFile). Before each upload, the upload manager calls `maybe_cleanup(provider_name)` which checks the `*_VALID_DAYS` environment variable. When the value is greater than zero, files older than that many days are deleted from the provider's storage.
 
 ---
 
