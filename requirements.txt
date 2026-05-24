@@ -1,0 +1,10 @@
+python-telegram-bot==20.7
+python-dotenv
+requests
+pytest
+pytest-asyncio
+pytest-mock
+aioresponses
+black
+isort
+flake8

@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  bridge:
+    build: .
+    container_name: hybrid-rar-bridge
+    restart: unless-stopped
+    volumes:
+      - ./downloads:/app/downloads
+      - ./tools:/app/tools
+    env_file:
+      - .env
