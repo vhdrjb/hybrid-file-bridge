@@ -90,13 +90,6 @@ class TestUploadWithFallback:
     @pytest.mark.asyncio
     async def test_first_provider_succeeds(self, sample_file, mock_env):
         """Test that the first available provider is used when it succeeds."""
-        mock_result = UploadResult(
-            url="https://example.com/file.rar",
-            provider="Bale",
-            file_name=sample_file.name,
-            file_size_mb=0.01,
-        )
-
         with patch(
             "tools.upload_manager.get_providers",
             return_value=[
@@ -117,14 +110,17 @@ class TestUploadWithFallback:
         """Test fallback to second provider when first fails."""
         providers = [
             _make_mock_provider(
-                "ProviderA", None, 100,
+                "ProviderA",
+                None,
+                100,
                 side_effect=RuntimeError("ProviderA is down"),
             ),
             _make_mock_provider("ProviderB", "https://providerB.com/file.rar", 100),
         ]
 
         with patch(
-            "tools.upload_manager.get_providers", return_value=providers,
+            "tools.upload_manager.get_providers",
+            return_value=providers,
         ):
             with patch(
                 "tools.upload_manager.is_provider_configured",
@@ -139,17 +135,22 @@ class TestUploadWithFallback:
         """Test that RuntimeError is raised when all providers fail."""
         providers = [
             _make_mock_provider(
-                "ProviderA", None, 100,
+                "ProviderA",
+                None,
+                100,
                 side_effect=RuntimeError("Down"),
             ),
             _make_mock_provider(
-                "ProviderB", None, 100,
+                "ProviderB",
+                None,
+                100,
                 side_effect=RuntimeError("Down too"),
             ),
         ]
 
         with patch(
-            "tools.upload_manager.get_providers", return_value=providers,
+            "tools.upload_manager.get_providers",
+            return_value=providers,
         ):
             with patch(
                 "tools.upload_manager.is_provider_configured",
@@ -167,7 +168,8 @@ class TestUploadWithFallback:
         ]
 
         with patch(
-            "tools.upload_manager.get_providers", return_value=providers,
+            "tools.upload_manager.get_providers",
+            return_value=providers,
         ):
             with patch(
                 "tools.upload_manager.is_provider_configured",
@@ -189,7 +191,8 @@ class TestUploadWithFallback:
             return p.name == "Configured"
 
         with patch(
-            "tools.upload_manager.get_providers", return_value=providers,
+            "tools.upload_manager.get_providers",
+            return_value=providers,
         ):
             with patch(
                 "tools.upload_manager.is_provider_configured",
@@ -203,7 +206,8 @@ class TestUploadWithFallback:
     async def test_no_providers_configured(self, sample_file, mock_env):
         """Test error when no providers are available at all."""
         with patch(
-            "tools.upload_manager.get_providers", return_value=[],
+            "tools.upload_manager.get_providers",
+            return_value=[],
         ):
             with pytest.raises(RuntimeError, match="No upload providers available"):
                 await upload_with_fallback(sample_file)
@@ -224,7 +228,8 @@ class TestUploadWithFallback:
         ]
 
         with patch(
-            "tools.upload_manager.get_providers", return_value=providers,
+            "tools.upload_manager.get_providers",
+            return_value=providers,
         ):
             with patch(
                 "tools.upload_manager.is_provider_configured",
@@ -234,9 +239,7 @@ class TestUploadWithFallback:
                     await upload_with_fallback(sample_file)
 
 
-def _make_mock_provider(
-    name, return_url, max_size_mb, side_effect=None
-):
+def _make_mock_provider(name, return_url, max_size_mb, side_effect=None):
     """Helper to create a mock ProviderConfig."""
     from tools.upload_manager import ProviderConfig
 

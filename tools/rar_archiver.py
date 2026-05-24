@@ -57,7 +57,10 @@ async def create_rar_archive(
     ]
 
     logger.info(
-        "Creating RAR archive: %s -> %s (%s)", input_path.name, output_rar.name, len(password) * "*"
+        "Creating RAR archive: %s -> %s (%s)",
+        input_path.name,
+        output_rar.name,
+        len(password) * "*",
     )
     logger.debug("RAR command: %s", " ".join(cmd[:5]) + " ...")
 
@@ -71,19 +74,13 @@ async def create_rar_archive(
 
     if process.returncode != 0:
         error_msg = stderr.decode().strip() or stdout.decode().strip()
-        raise RuntimeError(
-            f"RAR archive creation failed (code {process.returncode}): {error_msg}"
-        )
+        raise RuntimeError(f"RAR archive creation failed (code {process.returncode}): {error_msg}")
 
     if not output_rar.exists():
-        raise FileNotFoundError(
-            f"RAR command succeeded but output file not found: {output_rar}"
-        )
+        raise FileNotFoundError(f"RAR command succeeded but output file not found: {output_rar}")
 
     archive_size_mb = output_rar.stat().st_size / (1024 * 1024)
-    logger.info(
-        "Archive created: %s (%.2f MB)", output_rar.name, archive_size_mb
-    )
+    logger.info("Archive created: %s (%.2f MB)", output_rar.name, archive_size_mb)
 
     return output_rar
 
@@ -147,7 +144,9 @@ async def split_rar_volumes(
 
     logger.info(
         "Creating split RAR archive: %s -> %s/*.part*.rar (volumes of %s MB)",
-        input_path.name, output_dir, volume_str,
+        input_path.name,
+        output_dir,
+        volume_str,
     )
     logger.debug("RAR command: %s", " ".join(cmd[:5]) + " ...")
 
@@ -161,9 +160,7 @@ async def split_rar_volumes(
 
     if process.returncode != 0:
         error_msg = stderr.decode().strip() or stdout.decode().strip()
-        raise RuntimeError(
-            f"RAR volume creation failed (code {process.returncode}): {error_msg}"
-        )
+        raise RuntimeError(f"RAR volume creation failed (code {process.returncode}): {error_msg}")
 
     # Find all generated volume parts
     parts = sorted(output_dir.glob(f"{base_name}.part*.rar"))
@@ -172,14 +169,14 @@ async def split_rar_volumes(
         # Also try the pattern without 'part' in case rar uses a different naming
         parts = sorted(output_dir.glob(f"{base_name}*.rar"))
         if not parts:
-            raise RuntimeError(
-                f"RAR volume command succeeded but no parts found in {output_dir}"
-            )
+            raise RuntimeError(f"RAR volume command succeeded but no parts found in {output_dir}")
 
     total_size_mb = sum(p.stat().st_size for p in parts) / (1024 * 1024)
     logger.info(
         "Created %d volume parts: %s (total %.2f MB)",
-        len(parts), [p.name for p in parts], total_size_mb,
+        len(parts),
+        [p.name for p in parts],
+        total_size_mb,
     )
 
     return parts

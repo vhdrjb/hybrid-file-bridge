@@ -7,7 +7,7 @@ missing configuration, and file validation.
 """
 
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -67,9 +67,7 @@ class TestBaleUploader:
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "ok": True,
-            "result": {
-                "document": {"file_id": "http_fallback_123"}
-            },
+            "result": {"document": {"file_id": "http_fallback_123"}},
         }
 
         with patch.dict("sys.modules", {"balebot": None}):

@@ -75,11 +75,7 @@ DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 # URL detection regex (simple but covers most direct download links)
 URL_PATTERN = re.compile(
-    r"https?://"
-    r"(?:www\.)?"
-    r"[^\s<>\"]+"
-    r"\.[a-zA-Z]{2,}"
-    r"[^\s<>\"]*",
+    r"https?://" r"(?:www\.)?" r"[^\s<>\"]+" r"\.[a-zA-Z]{2,}" r"[^\s<>\"]*",
     re.IGNORECASE,
 )
 
@@ -148,9 +144,7 @@ def is_authorized(user_id: int) -> bool:
     """
     authorized_str = os.getenv("AUTHORIZED_USERS", "")
     authorized_users = [
-        int(uid.strip())
-        for uid in authorized_str.split(",")
-        if uid.strip().isdigit()
+        int(uid.strip()) for uid in authorized_str.split(",") if uid.strip().isdigit()
     ]
     if not authorized_users:
         return False
@@ -178,9 +172,9 @@ def format_extraction_guide(password: str, is_multi: bool = False) -> str:
 
     if is_multi:
         guide += (
-            f"\n⚠️ Multi-part archive: Download ALL parts into the same folder, "
-            f"then extract the .part1.rar file. "
-            f"All parts must be in the same directory for extraction to work.\n"
+            "\n⚠️ Multi-part archive: Download ALL parts into the same folder, "
+            "then extract the .part1.rar file. "
+            "All parts must be in the same directory for extraction to work.\n"
         )
 
     return guide
@@ -212,15 +206,11 @@ async def process_downloaded_file(
     """
     file_size_mb = downloaded_file.stat().st_size / MB
 
-    logger.info(
-        "Processing: %s (%.2f MB)", downloaded_file.name, file_size_mb
-    )
+    logger.info("Processing: %s (%.2f MB)", downloaded_file.name, file_size_mb)
 
     if file_size_mb <= SINGLE_UPLOAD_MAX_MB:
         # Single file upload path
-        await status_msg.edit_text(
-            f"📦 Creating archive ({file_size_mb:.1f} MB)..."
-        )
+        await status_msg.edit_text(f"📦 Creating archive ({file_size_mb:.1f} MB)...")
 
         output_rar = temp_path / f"{downloaded_file.stem}.rar"
         await create_rar_archive(
@@ -267,14 +257,14 @@ async def process_downloaded_file(
 
         links = []
         for i, part_file in enumerate(part_files, 1):
-            await status_msg.edit_text(
-                f"📤 Uploading part {i}/{len(part_files)}..."
-            )
+            await status_msg.edit_text(f"📤 Uploading part {i}/{len(part_files)}...")
             result = await upload_with_fallback(part_file)
             links.append((result.url, result.provider, part_file.name))
             logger.info(
                 "Part %d/%d uploaded via %s",
-                i, len(part_files), result.provider,
+                i,
+                len(part_files),
+                result.provider,
             )
 
             # Clean up each part after upload
@@ -291,8 +281,7 @@ async def process_downloaded_file(
 
         # Build multi-part reply
         links_text = "\n".join(
-            f"  {i+1}. [{p[2]}]({p[0]}) via {p[1]}"
-            for i, p in enumerate(links)
+            f"  {i + 1}. [{p[2]}]({p[0]}) via {p[1]}" for i, p in enumerate(links)
         )
 
         reply = (
@@ -307,7 +296,8 @@ async def process_downloaded_file(
     await status_msg.edit_text(reply, parse_mode="Markdown")
     logger.info(
         "Successfully processed %s (%.2f MB)",
-        downloaded_file.name, file_size_mb,
+        downloaded_file.name,
+        file_size_mb,
     )
 
 
@@ -324,9 +314,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     user = update.effective_user
     if not is_authorized(user.id):
-        await update.message.reply_text(
-            "⛔ Sorry, you are not authorized to use this bot."
-        )
+        await update.message.reply_text("⛔ Sorry, you are not authorized to use this bot.")
         logger.warning("Unauthorized /start from user %d (%s)", user.id, user.username)
         return
 
@@ -353,9 +341,7 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     """
     user = update.effective_user
     if not is_authorized(user.id):
-        await update.message.reply_text(
-            "⛔ Sorry, you are not authorized to use this bot."
-        )
+        await update.message.reply_text("⛔ Sorry, you are not authorized to use this bot.")
         return
 
     text = update.message.text or ""
@@ -363,8 +349,7 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     if not url:
         await update.message.reply_text(
-            "❌ No valid URL detected. Please send a direct download link "
-            "or a YouTube link."
+            "❌ No valid URL detected. Please send a direct download link " "or a YouTube link."
         )
         return
 
@@ -374,12 +359,8 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     # Standard direct download flow
-    status_msg = await update.message.reply_text(
-        "⏳ Downloading file, please wait..."
-    )
-    logger.info(
-        "User %d (%s) requested download: %s", user.id, user.username, url
-    )
+    status_msg = await update.message.reply_text("⏳ Downloading file, please wait...")
+    logger.info("User %d (%s) requested download: %s", user.id, user.username, url)
 
     with tempfile.TemporaryDirectory(prefix="hrb_") as temp_dir:
         temp_path = Path(temp_dir)
@@ -396,9 +377,7 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
             password = generate_password()
 
-            await process_downloaded_file(
-                downloaded_file, status_msg, password, temp_path
-            )
+            await process_downloaded_file(downloaded_file, status_msg, password, temp_path)
 
         except FileNotFoundError as e:
             await status_msg.edit_text(f"❌ File not found: {e}")
@@ -410,18 +389,17 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
         except asyncio.TimeoutError:
             await status_msg.edit_text(
-                "❌ Download timed out. The server may be slow "
-                "or the link may be invalid."
+                "❌ Download timed out. The server may be slow " "or the link may be invalid."
             )
             logger.error("TimeoutError for user %d", user.id)
 
         except Exception as e:
-            await status_msg.edit_text(
-                "❌ An unexpected error occurred. Please try again later."
-            )
+            await status_msg.edit_text("❌ An unexpected error occurred. Please try again later.")
             logger.exception(
                 "Unexpected error for user %d processing %s: %s",
-                user.id, url, e,
+                user.id,
+                url,
+                e,
             )
 
 
@@ -447,18 +425,16 @@ async def _handle_youtube_url(
         url: The YouTube URL to process.
     """
     user = update.effective_user
-    status_msg = await update.message.reply_text(
-        "🎬 Detecting YouTube video..."
-    )
+    status_msg = await update.message.reply_text("🎬 Detecting YouTube video...")
     logger.info(
         "User %d (%s) sent YouTube link: %s",
-        user.id, user.username, url,
+        user.id,
+        user.username,
+        url,
     )
 
     try:
-        await status_msg.edit_text(
-            "🎬 Fetching available qualities..."
-        )
+        await status_msg.edit_text("🎬 Fetching available qualities...")
 
         info = await get_video_info(url)
         formats = parse_formats(info)
@@ -517,7 +493,9 @@ async def _handle_youtube_url(
 
         logger.info(
             "Sent %d format options to user %d for: %s",
-            len(formats), user.id, display_title,
+            len(formats),
+            user.id,
+            display_title,
         )
 
     except RuntimeError as e:
@@ -532,12 +510,11 @@ async def _handle_youtube_url(
         logger.error("YouTube info timeout for user %d", user.id)
 
     except Exception as e:
-        await status_msg.edit_text(
-            "❌ An unexpected error occurred while fetching video info."
-        )
+        await status_msg.edit_text("❌ An unexpected error occurred while fetching video info.")
         logger.exception(
             "Unexpected error for user %d fetching YouTube info: %s",
-            user.id, e,
+            user.id,
+            e,
         )
 
 
@@ -560,9 +537,7 @@ async def handle_youtube_quality_callback(
 
     user = update.effective_user
     if not is_authorized(user.id):
-        await query.edit_message_text(
-            "⛔ Sorry, you are not authorized to use this bot."
-        )
+        await query.edit_message_text("⛔ Sorry, you are not authorized to use this bot.")
         return
 
     callback_data = query.data or ""
@@ -570,7 +545,7 @@ async def handle_youtube_quality_callback(
     if not callback_data.startswith(CALLBACK_PREFIX):
         return
 
-    format_id = callback_data[len(CALLBACK_PREFIX):]
+    format_id = callback_data[len(CALLBACK_PREFIX) :]
 
     # Retrieve stored job data
     url = context.user_data.get("yt_url")
@@ -578,9 +553,7 @@ async def handle_youtube_quality_callback(
     formats: list[VideoFormat] | None = context.user_data.get("yt_formats")
 
     if not url:
-        await query.edit_message_text(
-            "❌ Session expired. Please send the YouTube link again."
-        )
+        await query.edit_message_text("❌ Session expired. Please send the YouTube link again.")
         return
 
     # Find the selected format for display
@@ -595,7 +568,8 @@ async def handle_youtube_quality_callback(
     if selected_format:
         size_str = (
             f"{selected_format.filesize_mb:.0f} MB"
-            if selected_format.filesize_mb else "unknown size"
+            if selected_format.filesize_mb
+            else "unknown size"
         )
         quality_desc = f" ({selected_format.resolution} {selected_format.extension}, {size_str})"
 
@@ -603,7 +577,9 @@ async def handle_youtube_quality_callback(
 
     logger.info(
         "User %d selected format %s for: %s",
-        user.id, format_id, video_title,
+        user.id,
+        format_id,
+        video_title,
     )
 
     # Update the message to show processing state
@@ -638,6 +614,7 @@ async def handle_youtube_quality_callback(
             # by creating a wrapper that mimics edit_text
             class StatusMessageWrapper:
                 """Wraps a callback query message for edit_text compatibility."""
+
                 def __init__(self, msg):
                     self._msg = msg
 
@@ -646,9 +623,7 @@ async def handle_youtube_quality_callback(
 
             status_wrapper = StatusMessageWrapper(query.message)
 
-            await process_downloaded_file(
-                downloaded_file, status_wrapper, password, temp_path
-            )
+            await process_downloaded_file(downloaded_file, status_wrapper, password, temp_path)
 
             # Clean up stored job data
             context.user_data.pop("yt_url", None)
@@ -676,7 +651,8 @@ async def handle_youtube_quality_callback(
             )
             logger.exception(
                 "Unexpected error for user %d YouTube download: %s",
-                user.id, e,
+                user.id,
+                e,
             )
 
 
@@ -696,31 +672,19 @@ def main() -> None:
         raise SystemExit(1)
 
     if not AUTHORIZED_USERS:
-        logger.warning(
-            "No AUTHORIZED_USERS configured. "
-            "No one will be able to use the bot!"
-        )
+        logger.warning("No AUTHORIZED_USERS configured. " "No one will be able to use the bot!")
 
     logger.info("Starting Hybrid RAR File Bridge...")
     logger.info("Authorized users: %s", AUTHORIZED_USERS)
     logger.info("Single upload max: %d MB", int(SINGLE_UPLOAD_MAX_MB))
     logger.info("RAR volume size: %d MB", int(RAR_VOLUME_SIZE_MB))
 
-    application = (
-        Application.builder()
-        .token(TELEGRAM_BOT_TOKEN)
-        .concurrent_updates(True)
-        .build()
-    )
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).concurrent_updates(True).build()
 
     # Register handlers
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link)
-    )
-    application.add_handler(
-        CallbackQueryHandler(handle_youtube_quality_callback)
-    )
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link))
+    application.add_handler(CallbackQueryHandler(handle_youtube_quality_callback))
 
     logger.info("Bot is running. Press Ctrl+C to stop.")
 

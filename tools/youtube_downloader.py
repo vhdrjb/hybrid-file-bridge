@@ -144,9 +144,10 @@ def parse_formats(info: dict) -> list[VideoFormat]:
             video_formats.append(parsed)
 
     # Sort video by resolution (descending), audio by bitrate-like order
-    video_formats.sort(key=lambda f: (
-        int(f.resolution.split("x")[1]) if "x" in f.resolution else 0
-    ), reverse=True)
+    video_formats.sort(
+        key=lambda f: (int(f.resolution.split("x")[1]) if "x" in f.resolution else 0),
+        reverse=True,
+    )
     audio_formats.sort(key=lambda f: f.filesize_mb or 0, reverse=True)
 
     return video_formats + audio_formats
@@ -184,17 +185,14 @@ async def get_video_info(url: str) -> dict:
         stderr=asyncio.subprocess.PIPE,
     )
 
-    stdout, stderr = await asyncio.wait_for(
-        process.communicate(), timeout=120
-    )
+    stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=120)
 
     if process.returncode != 0:
         error_msg = stderr.decode().strip() or "Unknown error"
-        raise RuntimeError(
-            f"yt-dlp info fetch failed (code {process.returncode}): {error_msg}"
-        )
+        raise RuntimeError(f"yt-dlp info fetch failed (code {process.returncode}): {error_msg}")
 
     import json
+
     try:
         info = json.loads(stdout.decode())
     except json.JSONDecodeError as e:
@@ -243,20 +241,22 @@ async def download_video(
 
     cmd = [
         "yt-dlp",
-        "-f", format_id,
-        "--merge-output-format", "mp4",
-        "-o", output_template_path,
+        "-f",
+        format_id,
+        "--merge-output-format",
+        "mp4",
+        "-o",
+        output_template_path,
         "--no-playlist",
         "--no-warnings",
         "--progress",
         "--newline",
-        "--concurrent-fragments", "4",
+        "--concurrent-fragments",
+        "4",
         url,
     ]
 
-    logger.info(
-        "Downloading YouTube video: %s (format: %s)", url, format_id
-    )
+    logger.info("Downloading YouTube video: %s (format: %s)", url, format_id)
 
     process = await asyncio.create_subprocess_exec(
         *cmd,
@@ -265,36 +265,26 @@ async def download_video(
     )
 
     try:
-        stdout, stderr = await asyncio.wait_for(
-            process.communicate(), timeout=3600
-        )
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=3600)
     except asyncio.TimeoutError:
         process.kill()
         await process.wait()
-        raise asyncio.TimeoutError(
-            f"YouTube download timed out after 3600s: {url}"
-        )
+        raise asyncio.TimeoutError(f"YouTube download timed out after 3600s: {url}")
 
     if process.returncode != 0:
         error_msg = stderr.decode().strip() or stdout.decode().strip()
-        raise RuntimeError(
-            f"yt-dlp download failed (code {process.returncode}): {error_msg}"
-        )
+        raise RuntimeError(f"yt-dlp download failed (code {process.returncode}): {error_msg}")
 
     # Find the downloaded file
     downloaded_files = list(output_dir.glob("*"))
     if not downloaded_files:
-        raise FileNotFoundError(
-            f"yt-dlp completed but no file found in {output_dir}"
-        )
+        raise FileNotFoundError(f"yt-dlp completed but no file found in {output_dir}")
 
     # The most recently modified file is the download
     downloaded = max(downloaded_files, key=lambda p: p.stat().st_mtime)
 
     file_size_mb = downloaded.stat().st_size / (1024 * 1024)
-    logger.info(
-        "YouTube download complete: %s (%.2f MB)", downloaded.name, file_size_mb
-    )
+    logger.info("YouTube download complete: %s (%.2f MB)", downloaded.name, file_size_mb)
 
     return downloaded
 
@@ -320,6 +310,4 @@ def format_quality_button_label(fmt: VideoFormat, index: int) -> str:
     fps_str = f" {int(fmt.fps)}fps" if fmt.fps else ""
     note_str = f" {fmt.note}" if fmt.note else ""
 
-    return (
-        f"▶ {fmt.resolution} ({fmt.extension}){fps_str} – {size_str}{note_str}"
-    )
+    return f"▶ {fmt.resolution} ({fmt.extension}){fps_str} – {size_str}{note_str}"

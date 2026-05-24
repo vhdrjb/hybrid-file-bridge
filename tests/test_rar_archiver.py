@@ -6,18 +6,17 @@ password encryption, and error handling. Tests use the real `rar`
 command if available, otherwise skip gracefully.
 """
 
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from tools.rar_archiver import create_rar_archive, split_rar_volumes
 
-
 # Check if rar is available on the system
 RAR_AVAILABLE = False
 try:
     import subprocess
+
     result = subprocess.run(["rar", "--version"], capture_output=True, text=True)
     RAR_AVAILABLE = result.returncode == 0
 except FileNotFoundError:
@@ -176,9 +175,7 @@ class TestRarArchiverMocked:
 
         mock_process = AsyncMock()
         mock_process.returncode = 10
-        mock_process.communicate = AsyncMock(
-            return_value=(b"", b"Cannot create archive")
-        )
+        mock_process.communicate = AsyncMock(return_value=(b"", b"Cannot create archive"))
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             with pytest.raises(RuntimeError, match="RAR archive creation failed"):

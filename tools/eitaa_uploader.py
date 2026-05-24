@@ -51,9 +51,7 @@ async def upload(file_path: Path) -> str:
 
     file_size = file_path.stat().st_size
     file_size_mb = file_size / (1024 * 1024)
-    logger.info(
-        "Uploading to Eitaa: %s (%.2f MB)", file_path.name, file_size_mb
-    )
+    logger.info("Uploading to Eitaa: %s (%.2f MB)", file_path.name, file_size_mb)
 
     try:
         from eitaa import Eitaa
@@ -72,20 +70,14 @@ async def upload(file_path: Path) -> str:
 
     except ImportError:
         # Fallback to HTTP API
-        logger.warning(
-            "eitaa package not installed, using HTTP API fallback for Eitaa"
-        )
+        logger.warning("eitaa package not installed, using HTTP API fallback for Eitaa")
         return await _upload_via_http(file_path, token, chat_id)
 
     except Exception as e:
-        raise RuntimeError(
-            f"Failed to upload {file_path.name} to Eitaa: {e}"
-        ) from e
+        raise RuntimeError(f"Failed to upload {file_path.name} to Eitaa: {e}") from e
 
 
-async def _upload_via_http(
-    file_path: Path, token: str, chat_id: str
-) -> str:
+async def _upload_via_http(file_path: Path, token: str, chat_id: str) -> str:
     """Upload file to Eitaa via direct HTTP API.
 
     Fallback uploader using the requests library when the eitaa package
@@ -117,8 +109,7 @@ async def _upload_via_http(
 
     if response.status_code != 200:
         raise RuntimeError(
-            f"Eitaa HTTP API returned status {response.status_code}: "
-            f"{response.text}"
+            f"Eitaa HTTP API returned status {response.status_code}: " f"{response.text}"
         )
 
     data = response.json()
@@ -126,9 +117,7 @@ async def _upload_via_http(
         description = data.get("description", "Unknown error")
         raise RuntimeError(f"Eitaa API error: {description}")
 
-    file_id = (
-        data.get("result", {}).get("document", {}).get("file_id", "unknown")
-    )
+    file_id = data.get("result", {}).get("document", {}).get("file_id", "unknown")
     download_url = f"https://eitaa.com/file/{file_id}"
     logger.info("Eitaa upload successful: %s", download_url)
     return download_url

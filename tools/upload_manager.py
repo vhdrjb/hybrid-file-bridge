@@ -100,9 +100,7 @@ def get_providers() -> list[ProviderConfig]:
         if name in all_providers:
             ordered.append(all_providers[name])
         else:
-            logger.warning(
-                "Unknown provider '%s' in PROVIDER_PRIORITY, skipping", name
-            )
+            logger.warning("Unknown provider '%s' in PROVIDER_PRIORITY, skipping", name)
 
     # Add any remaining providers not in the priority list
     for name, config in all_providers.items():
@@ -125,13 +123,12 @@ def is_provider_configured(provider: ProviderConfig) -> bool:
     Returns:
         True if all required env vars are present, False otherwise.
     """
-    missing = [
-        var for var in provider.env_required if not os.getenv(var)
-    ]
+    missing = [var for var in provider.env_required if not os.getenv(var)]
     if missing:
         logger.debug(
             "Provider %s is not configured (missing: %s)",
-            provider.name, ", ".join(missing),
+            provider.name,
+            ", ".join(missing),
         )
         return False
     return True
@@ -179,16 +176,16 @@ async def upload_with_fallback(file_path: Path) -> UploadResult:
     for provider in providers:
         # Check if provider is properly configured
         if not is_provider_configured(provider):
-            logger.info(
-                "Skipping provider '%s': not configured", provider.name
-            )
+            logger.info("Skipping provider '%s': not configured", provider.name)
             continue
 
         # Check file size against provider limit
         if file_size_mb > provider.max_size_mb:
             logger.info(
                 "Skipping provider '%s': file (%.2f MB) exceeds limit (%.2f MB)",
-                provider.name, file_size_mb, provider.max_size_mb,
+                provider.name,
+                file_size_mb,
+                provider.max_size_mb,
             )
             errors.append(
                 f"{provider.name}: file too large "
@@ -197,9 +194,7 @@ async def upload_with_fallback(file_path: Path) -> UploadResult:
             continue
 
         attempted.append(provider.name)
-        logger.info(
-            "Attempting upload to '%s' (%.2f MB)", provider.name, file_size_mb
-        )
+        logger.info("Attempting upload to '%s' (%.2f MB)", provider.name, file_size_mb)
 
         try:
             url = await provider.upload_func(file_path)
@@ -209,17 +204,13 @@ async def upload_with_fallback(file_path: Path) -> UploadResult:
                 file_name=file_path.name,
                 file_size_mb=file_size_mb,
             )
-            logger.info(
-                "Upload successful via '%s': %s", provider.name, file_path.name
-            )
+            logger.info("Upload successful via '%s': %s", provider.name, file_path.name)
             return result
 
         except Exception as e:
             error_msg = f"{provider.name}: {str(e)}"
             errors.append(error_msg)
-            logger.error(
-                "Upload failed for provider '%s': %s", provider.name, e
-            )
+            logger.error("Upload failed for provider '%s': %s", provider.name, e)
             continue
 
     # All providers failed

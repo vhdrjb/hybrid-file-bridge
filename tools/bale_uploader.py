@@ -53,9 +53,7 @@ async def upload(file_path: Path) -> str:
 
     file_size = file_path.stat().st_size
     file_size_mb = file_size / (1024 * 1024)
-    logger.info(
-        "Uploading to Bale: %s (%.2f MB)", file_path.name, file_size_mb
-    )
+    logger.info("Uploading to Bale: %s (%.2f MB)", file_path.name, file_size_mb)
 
     try:
         from balebot import Bot
@@ -73,29 +71,20 @@ async def upload(file_path: Path) -> str:
         if file_id:
             file_id = getattr(file_id, "file_id", "unknown")
 
-        result = (
-            f"Bale upload successful (File ID: {file_id}) "
-            f"-- check your channel {chat_id}"
-        )
+        result = f"Bale upload successful (File ID: {file_id}) " f"-- check your channel {chat_id}"
         logger.info(result)
         return result
 
     except ImportError:
         # Fallback: use HTTP API directly if balebot package is not installed
-        logger.warning(
-            "balebot package not installed, using HTTP API fallback for Bale"
-        )
+        logger.warning("balebot package not installed, using HTTP API fallback for Bale")
         return await _upload_via_http(file_path, token, chat_id)
 
     except Exception as e:
-        raise RuntimeError(
-            f"Failed to upload {file_path.name} to Bale: {e}"
-        ) from e
+        raise RuntimeError(f"Failed to upload {file_path.name} to Bale: {e}") from e
 
 
-async def _upload_via_http(
-    file_path: Path, token: str, chat_id: str
-) -> str:
+async def _upload_via_http(file_path: Path, token: str, chat_id: str) -> str:
     """Upload file to Bale via direct HTTP API.
 
     Fallback uploader using requests library when the balebot package
@@ -127,8 +116,7 @@ async def _upload_via_http(
 
     if response.status_code != 200:
         raise RuntimeError(
-            f"Bale HTTP API returned status {response.status_code}: "
-            f"{response.text}"
+            f"Bale HTTP API returned status {response.status_code}: " f"{response.text}"
         )
 
     data = response.json()
@@ -136,12 +124,7 @@ async def _upload_via_http(
         description = data.get("description", "Unknown error")
         raise RuntimeError(f"Bale API error: {description}")
 
-    file_id = (
-        data.get("result", {}).get("document", {}).get("file_id", "unknown")
-    )
-    result = (
-        f"Bale upload successful (File ID: {file_id}) "
-        f"-- check your channel {chat_id}"
-    )
+    file_id = data.get("result", {}).get("document", {}).get("file_id", "unknown")
+    result = f"Bale upload successful (File ID: {file_id}) " f"-- check your channel {chat_id}"
     logger.info(result)
     return result

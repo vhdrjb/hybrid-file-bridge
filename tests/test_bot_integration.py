@@ -10,22 +10,19 @@ These tests verify that the bot's handler correctly orchestrates the
 pipeline and produces the expected user-facing messages.
 """
 
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from telegram import Update, Message, User, Chat
-from telegram.ext import ApplicationBuilder
+from telegram import Chat, Message, Update, User
 
 from bot import (
-    handle_link,
-    start,
-    generate_password,
-    extract_url,
-    is_authorized,
-    _handle_youtube_url,
-    handle_youtube_quality_callback,
     CALLBACK_PREFIX,
+    extract_url,
+    generate_password,
+    handle_link,
+    handle_youtube_quality_callback,
+    is_authorized,
+    start,
 )
 
 
@@ -117,6 +114,7 @@ class TestBotHelpers:
         """Test authorization with empty authorized users list."""
         monkeypatch.setenv("AUTHORIZED_USERS", "")
         from bot import is_authorized as check
+
         assert check(123456789) is False
 
 
@@ -166,9 +164,7 @@ class TestHandleLinkHandler:
     @pytest.mark.asyncio
     async def test_handle_link_unauthorized(self, mock_env):
         """Test that unauthorized users are rejected."""
-        update = _make_update(
-            "https://example.com/file.zip", user_id=999999999
-        )
+        update = _make_update("https://example.com/file.zip", user_id=999999999)
         context = MagicMock()
 
         await handle_link(update, context)
@@ -186,19 +182,16 @@ class TestHandleLinkHandler:
         downloaded = downloads / "sample.txt"
         downloaded.write_bytes(sample_file.read_bytes())
 
-        update = _make_update(
-            "https://example.com/sample.txt", user_id=123456789
-        )
+        update = _make_update("https://example.com/sample.txt", user_id=123456789)
         context = MagicMock()
 
         # Mock the download function to return our sample file
         mock_download = AsyncMock(return_value=downloaded)
         # Mock archive creation to create a real file
-        mock_archive = AsyncMock(
-            side_effect=lambda **kwargs: sample_file  # return something
-        )
+        mock_archive = AsyncMock(side_effect=lambda **kwargs: sample_file)  # return something
         # Mock upload to return a URL
         from tools.upload_manager import UploadResult
+
         mock_upload = AsyncMock(
             return_value=UploadResult(
                 url="https://bale.example.com/file.rar",
@@ -224,20 +217,18 @@ class TestHandleLinkHandler:
     @pytest.mark.asyncio
     async def test_handle_link_download_error(self, mock_env):
         """Test error handling when download fails."""
-        update = _make_update(
-            "https://example.com/big_file.zip", user_id=123456789
-        )
+        update = _make_update("https://example.com/big_file.zip", user_id=123456789)
         context = MagicMock()
 
-        mock_download = AsyncMock(
-            side_effect=RuntimeError("aria2c failed with return code 3")
-        )
+        mock_download = AsyncMock(side_effect=RuntimeError("aria2c failed with return code 3"))
 
         with patch("bot.download_file", mock_download):
             await handle_link(update, context)
 
         # Verify error message was sent via edit_text
-        all_calls = str(update.message.edit_text.call_args_list) + str(update.message.reply_text.call_args_list)
+        all_calls = str(update.message.edit_text.call_args_list) + str(
+            update.message.reply_text.call_args_list
+        )
         assert "Error" in all_calls or "error" in all_calls.lower()
 
 
@@ -297,6 +288,7 @@ class TestYoutubeRouting:
         mock_download = AsyncMock(return_value=downloaded)
         mock_archive = AsyncMock(return_value=sample_file)
         from tools.upload_manager import UploadResult
+
         mock_upload = AsyncMock(
             return_value=UploadResult(
                 url="https://example.com/file.rar",
@@ -348,9 +340,7 @@ class TestYoutubeQualityCallback:
         video_file = yt_dir / "Test Video.mp4"
         video_file.write_bytes(b"fake video data")
 
-        update = self._make_callback_update(
-            f"{CALLBACK_PREFIX}137"
-        )
+        update = self._make_callback_update(f"{CALLBACK_PREFIX}137")
         context = MagicMock()
         context.user_data = {
             "yt_url": "https://youtube.com/watch?v=test",
@@ -361,6 +351,7 @@ class TestYoutubeQualityCallback:
         mock_download = AsyncMock(return_value=video_file)
         mock_archive = AsyncMock(return_value=video_file)
         from tools.upload_manager import UploadResult
+
         mock_upload = AsyncMock(
             return_value=UploadResult(
                 url="https://example.com/video.rar",
@@ -398,9 +389,7 @@ class TestYoutubeQualityCallback:
     @pytest.mark.asyncio
     async def test_callback_expired_session(self, mock_env):
         """Test handling of expired session (no stored URL)."""
-        update = self._make_callback_update(
-            f"{CALLBACK_PREFIX}137"
-        )
+        update = self._make_callback_update(f"{CALLBACK_PREFIX}137")
         context = MagicMock()
         context.user_data = {}  # No yt_url stored
 
@@ -425,9 +414,7 @@ class TestYoutubeQualityCallback:
     @pytest.mark.asyncio
     async def test_callback_download_error(self, mock_env):
         """Test error handling when YouTube download fails in callback."""
-        update = self._make_callback_update(
-            f"{CALLBACK_PREFIX}137"
-        )
+        update = self._make_callback_update(f"{CALLBACK_PREFIX}137")
         context = MagicMock()
         context.user_data = {
             "yt_url": "https://youtube.com/watch?v=test",
@@ -435,9 +422,7 @@ class TestYoutubeQualityCallback:
             "yt_formats": [],
         }
 
-        mock_download = AsyncMock(
-            side_effect=RuntimeError("yt-dlp download failed")
-        )
+        mock_download = AsyncMock(side_effect=RuntimeError("yt-dlp download failed"))
 
         with patch("bot.download_video", mock_download):
             await handle_youtube_quality_callback(update, context)
@@ -453,9 +438,7 @@ class TestYoutubeQualityCallback:
         video_file = yt_dir / "Test Video.mp4"
         video_file.write_bytes(b"fake video data")
 
-        update = self._make_callback_update(
-            f"{CALLBACK_PREFIX}137"
-        )
+        update = self._make_callback_update(f"{CALLBACK_PREFIX}137")
         context = MagicMock()
         context.user_data = {
             "yt_url": "https://youtube.com/watch?v=test",
@@ -466,6 +449,7 @@ class TestYoutubeQualityCallback:
         mock_download = AsyncMock(return_value=video_file)
         mock_archive = AsyncMock(return_value=video_file)
         from tools.upload_manager import UploadResult
+
         mock_upload = AsyncMock(
             return_value=UploadResult(
                 url="https://example.com/video.rar",
