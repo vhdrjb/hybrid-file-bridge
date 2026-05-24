@@ -713,7 +713,7 @@ def main() -> None:
         .read_timeout(60)
         .write_timeout(60)
         .connect_timeout(30)
-        .get_updates_timeout(60)
+        .get_updates_pool_timeout(60)
         .build()
     )
 
