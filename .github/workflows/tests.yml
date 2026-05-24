@@ -20,7 +20,6 @@ jobs:
 
       - name: Enable multiverse and install system dependencies
         run: |
-          sudo echo "deb http://archive.ubuntu.com/ubuntu jammy multiverse" | sudo tee -a /etc/apt/sources.list
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends rar aria2
 
