@@ -17,7 +17,16 @@ import pytest
 from telegram import Update, Message, User, Chat
 from telegram.ext import ApplicationBuilder
 
-from bot import handle_link, start, generate_password, extract_url, is_authorized
+from bot import (
+    handle_link,
+    start,
+    generate_password,
+    extract_url,
+    is_authorized,
+    _handle_youtube_url,
+    handle_youtube_quality_callback,
+    CALLBACK_PREFIX,
+)
 
 
 def _make_update(text: str, user_id: int = 123456789) -> Update:
@@ -230,3 +239,247 @@ class TestHandleLinkHandler:
         # Verify error message was sent via edit_text
         all_calls = str(update.message.edit_text.call_args_list) + str(update.message.reply_text.call_args_list)
         assert "Error" in all_calls or "error" in all_calls.lower()
+
+
+class TestYoutubeRouting:
+    """Tests that YouTube URLs are correctly routed."""
+
+    @pytest.mark.asyncio
+    async def test_youtube_url_routed_to_youtube_handler(self, mock_env):
+        """Test that YouTube URLs trigger the YouTube quality flow."""
+        update = _make_update(
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            user_id=123456789,
+        )
+        context = MagicMock()
+        context.user_data = {}
+
+        mock_yt_handler = AsyncMock()
+
+        with patch("bot._handle_youtube_url", mock_yt_handler):
+            await handle_link(update, context)
+
+        mock_yt_handler.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_youtu_be_routed(self, mock_env):
+        """Test that youtu.be short URLs are routed to YouTube handler."""
+        update = _make_update(
+            "https://youtu.be/dQw4w9WgXcQ",
+            user_id=123456789,
+        )
+        context = MagicMock()
+        context.user_data = {}
+
+        mock_yt_handler = AsyncMock()
+
+        with patch("bot._handle_youtube_url", mock_yt_handler):
+            await handle_link(update, context)
+
+        mock_yt_handler.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_non_youtube_not_routed(self, mock_env, temp_dir, sample_file):
+        """Test that non-YouTube URLs go through normal download flow."""
+        downloads = temp_dir / "downloads"
+        downloads.mkdir()
+        downloaded = downloads / "sample.txt"
+        downloaded.write_bytes(sample_file.read_bytes())
+
+        update = _make_update(
+            "https://example.com/file.zip",
+            user_id=123456789,
+        )
+        context = MagicMock()
+        context.user_data = {}
+
+        mock_yt_handler = AsyncMock()
+        mock_download = AsyncMock(return_value=downloaded)
+        mock_archive = AsyncMock(return_value=sample_file)
+        from tools.upload_manager import UploadResult
+        mock_upload = AsyncMock(
+            return_value=UploadResult(
+                url="https://example.com/file.rar",
+                provider="Bale",
+                file_name="file.rar",
+                file_size_mb=0.01,
+            )
+        )
+
+        with patch("bot._handle_youtube_url", mock_yt_handler):
+            with patch("bot.download_file", mock_download):
+                with patch("bot.create_rar_archive", mock_archive):
+                    with patch("bot.upload_with_fallback", mock_upload):
+                        with patch("bot.DOWNLOADS_DIR", downloads):
+                            await handle_link(update, context)
+
+        mock_yt_handler.assert_not_called()
+
+
+class TestYoutubeQualityCallback:
+    """Tests for the YouTube quality callback handler."""
+
+    def _make_callback_update(self, callback_data: str, user_id: int = 123456789):
+        """Create a mock callback query update."""
+        user = MagicMock(spec=User)
+        user.id = user_id
+        user.first_name = "TestUser"
+
+        message = MagicMock(spec=Message)
+        message.edit_text = AsyncMock()
+
+        callback_query = MagicMock()
+        callback_query.data = callback_data
+        callback_query.answer = AsyncMock()
+        callback_query.edit_message_text = AsyncMock()
+        callback_query.message = message
+
+        update = MagicMock(spec=Update)
+        update.callback_query = callback_query
+        update.effective_user = user
+
+        return update
+
+    @pytest.mark.asyncio
+    async def test_callback_authorized_success(self, mock_env, temp_dir):
+        """Test successful quality selection and download pipeline."""
+        yt_dir = temp_dir / "yt_video"
+        yt_dir.mkdir()
+        video_file = yt_dir / "Test Video.mp4"
+        video_file.write_bytes(b"fake video data")
+
+        update = self._make_callback_update(
+            f"{CALLBACK_PREFIX}137"
+        )
+        context = MagicMock()
+        context.user_data = {
+            "yt_url": "https://youtube.com/watch?v=test",
+            "yt_title": "Test Video Title",
+            "yt_formats": [],
+        }
+
+        mock_download = AsyncMock(return_value=video_file)
+        mock_archive = AsyncMock(return_value=video_file)
+        from tools.upload_manager import UploadResult
+        mock_upload = AsyncMock(
+            return_value=UploadResult(
+                url="https://example.com/video.rar",
+                provider="ParsaSpace",
+                file_name="video.rar",
+                file_size_mb=5.0,
+            )
+        )
+
+        with patch("bot.download_video", mock_download):
+            with patch("bot.create_rar_archive", mock_archive):
+                with patch("bot.upload_with_fallback", mock_upload):
+                    await handle_youtube_quality_callback(update, context)
+
+        update.callback_query.answer.assert_called_once()
+        # Should have edit_message_text calls (status + final)
+        assert update.callback_query.edit_message_text.called
+
+    @pytest.mark.asyncio
+    async def test_callback_unauthorized(self, mock_env):
+        """Test that unauthorized users get rejected on callback."""
+        update = self._make_callback_update(
+            f"{CALLBACK_PREFIX}137",
+            user_id=999999999,
+        )
+        context = MagicMock()
+        context.user_data = {}
+
+        await handle_youtube_quality_callback(update, context)
+
+        update.callback_query.edit_message_text.assert_called_once()
+        args = update.callback_query.edit_message_text.call_args
+        assert "not authorized" in str(args).lower()
+
+    @pytest.mark.asyncio
+    async def test_callback_expired_session(self, mock_env):
+        """Test handling of expired session (no stored URL)."""
+        update = self._make_callback_update(
+            f"{CALLBACK_PREFIX}137"
+        )
+        context = MagicMock()
+        context.user_data = {}  # No yt_url stored
+
+        await handle_youtube_quality_callback(update, context)
+
+        args = update.callback_query.edit_message_text.call_args
+        assert "Session expired" in str(args) or "expired" in str(args).lower()
+
+    @pytest.mark.asyncio
+    async def test_callback_ignores_non_yt_callbacks(self, mock_env):
+        """Test that non-YouTube callbacks are ignored."""
+        update = self._make_callback_update("some_other_callback:123")
+        context = MagicMock()
+        context.user_data = {}
+
+        await handle_youtube_quality_callback(update, context)
+
+        # Should answer but NOT edit the message
+        update.callback_query.answer.assert_called_once()
+        update.callback_query.edit_message_text.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_callback_download_error(self, mock_env):
+        """Test error handling when YouTube download fails in callback."""
+        update = self._make_callback_update(
+            f"{CALLBACK_PREFIX}137"
+        )
+        context = MagicMock()
+        context.user_data = {
+            "yt_url": "https://youtube.com/watch?v=test",
+            "yt_title": "Test",
+            "yt_formats": [],
+        }
+
+        mock_download = AsyncMock(
+            side_effect=RuntimeError("yt-dlp download failed")
+        )
+
+        with patch("bot.download_video", mock_download):
+            await handle_youtube_quality_callback(update, context)
+
+        args = update.callback_query.edit_message_text.call_args_list[-1]
+        assert "Error" in str(args)
+
+    @pytest.mark.asyncio
+    async def test_callback_cleans_up_user_data(self, mock_env, temp_dir):
+        """Test that stored job data is cleaned up after success."""
+        yt_dir = temp_dir / "yt_video"
+        yt_dir.mkdir()
+        video_file = yt_dir / "Test Video.mp4"
+        video_file.write_bytes(b"fake video data")
+
+        update = self._make_callback_update(
+            f"{CALLBACK_PREFIX}137"
+        )
+        context = MagicMock()
+        context.user_data = {
+            "yt_url": "https://youtube.com/watch?v=test",
+            "yt_title": "Test Video",
+            "yt_formats": [],
+        }
+
+        mock_download = AsyncMock(return_value=video_file)
+        mock_archive = AsyncMock(return_value=video_file)
+        from tools.upload_manager import UploadResult
+        mock_upload = AsyncMock(
+            return_value=UploadResult(
+                url="https://example.com/video.rar",
+                provider="Bale",
+                file_name="video.rar",
+                file_size_mb=1.0,
+            )
+        )
+
+        with patch("bot.download_video", mock_download):
+            with patch("bot.create_rar_archive", mock_archive):
+                with patch("bot.upload_with_fallback", mock_upload):
+                    await handle_youtube_quality_callback(update, context)
+
+        # Verify cleanup
+        assert "yt_url" not in context.user_data
+        assert "yt_title" not in context.user_data

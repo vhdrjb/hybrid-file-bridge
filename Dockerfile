@@ -1,9 +1,9 @@
 FROM python:3.11-slim
 
-# Enable multiverse and install rar + aria2
+# Enable multiverse and install rar + aria2 + ffmpeg (for YouTube downloads)
 RUN echo "deb http://archive.ubuntu.com/ubuntu jammy multiverse" >> /etc/apt/sources.list && \
     apt-get update && \
-    apt-get install -y --no-install-recommends rar aria2 && \
+    apt-get install -y --no-install-recommends rar aria2 ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
