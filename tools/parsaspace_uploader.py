@@ -41,6 +41,7 @@ async def upload(file_path: Path) -> str:
         RuntimeError: If the upload fails or configuration is missing.
     """
     import os
+
     import requests
 
     file_path = Path(file_path)
@@ -57,9 +58,7 @@ async def upload(file_path: Path) -> str:
 
     file_size = file_path.stat().st_size
     file_size_mb = file_size / (1024 * 1024)
-    logger.info(
-        "Uploading to ParsaSpace: %s (%.2f MB)", file_path.name, file_size_mb
-    )
+    logger.info("Uploading to ParsaSpace: %s (%.2f MB)", file_path.name, file_size_mb)
 
     headers = {
         "Authorization": f"Bearer {token}",
@@ -78,8 +77,7 @@ async def upload(file_path: Path) -> str:
 
         if response.status_code != 200:
             raise RuntimeError(
-                f"ParsaSpace API returned status {response.status_code}: "
-                f"{response.text}"
+                f"ParsaSpace API returned status {response.status_code}: " f"{response.text}"
             )
 
         data = response.json()
@@ -100,14 +98,11 @@ async def upload(file_path: Path) -> str:
 
     except requests.exceptions.Timeout:
         raise RuntimeError(
-            f"ParsaSpace upload timed out for {file_path.name} "
-            f"({file_size_mb:.2f} MB)"
+            f"ParsaSpace upload timed out for {file_path.name} " f"({file_size_mb:.2f} MB)"
         )
     except requests.exceptions.ConnectionError as e:
         raise RuntimeError(
             f"ParsaSpace connection error while uploading {file_path.name}: {e}"
         ) from e
     except Exception as e:
-        raise RuntimeError(
-            f"Failed to upload {file_path.name} to ParsaSpace: {e}"
-        ) from e
+        raise RuntimeError(f"Failed to upload {file_path.name} to ParsaSpace: {e}") from e

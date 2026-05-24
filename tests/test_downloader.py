@@ -127,9 +127,7 @@ class TestDownloadFile:
 
         import asyncio
 
-        mock_process.communicate = AsyncMock(
-            side_effect=asyncio.TimeoutError()
-        )
+        mock_process.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             with pytest.raises(asyncio.TimeoutError):

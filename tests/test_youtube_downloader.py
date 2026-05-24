@@ -6,11 +6,11 @@ video downloading, and button label formatting. All yt-dlp subprocess
 calls are mocked.
 """
 
+import asyncio
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import asyncio
 import pytest
 
 from tools.youtube_downloader import (
@@ -21,7 +21,6 @@ from tools.youtube_downloader import (
     is_youtube_url,
     parse_formats,
 )
-
 
 # ---------------------------------------------------------------------------
 # Sample yt-dlp JSON response for testing
@@ -131,9 +130,9 @@ class TestIsYoutubeUrl:
         assert is_youtube_url("https://music.youtube.com/watch?v=dQw4w9WgXcQ") is True
 
     def test_with_query_params(self):
-        assert is_youtube_url(
-            "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s&list=PLabc"
-        ) is True
+        assert (
+            is_youtube_url("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s&list=PLabc") is True
+        )
 
     def test_non_youtube_url(self):
         assert is_youtube_url("https://example.com/file.zip") is False
@@ -149,9 +148,7 @@ class TestIsYoutubeUrl:
 
     def test_with_text_around(self):
         """YouTube URL embedded in other text should still be detected."""
-        assert is_youtube_url(
-            "Check this out: https://youtu.be/dQw4w9WgXcQ it's great!"
-        ) is True
+        assert is_youtube_url("Check this out: https://youtu.be/dQw4w9WgXcQ it's great!") is True
 
 
 class TestParseFormats:
@@ -213,14 +210,22 @@ class TestParseFormats:
         info = {
             "formats": [
                 {
-                    "format_id": "137", "ext": "mp4",
-                    "width": 1920, "height": 1080, "fps": 30,
-                    "resolution": "1920x1080", "filesize": 50000000,
+                    "format_id": "137",
+                    "ext": "mp4",
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": 30,
+                    "resolution": "1920x1080",
+                    "filesize": 50000000,
                 },
                 {
-                    "format_id": "137", "ext": "mp4",
-                    "width": 1920, "height": 1080, "fps": 30,
-                    "resolution": "1920x1080", "filesize": 50000000,
+                    "format_id": "137",
+                    "ext": "mp4",
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": 30,
+                    "resolution": "1920x1080",
+                    "filesize": 50000000,
                 },
             ],
         }
@@ -235,9 +240,7 @@ class TestGetVideoInfo:
     async def test_successful_info_fetch(self):
         mock_process = AsyncMock()
         mock_process.returncode = 0
-        mock_process.communicate = AsyncMock(
-            return_value=(SAMPLE_YTDLP_JSON.encode(), b"")
-        )
+        mock_process.communicate = AsyncMock(return_value=(SAMPLE_YTDLP_JSON.encode(), b""))
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             info = await get_video_info("https://youtube.com/watch?v=test")
@@ -249,9 +252,7 @@ class TestGetVideoInfo:
     async def test_ytdlp_failure(self):
         mock_process = AsyncMock()
         mock_process.returncode = 1
-        mock_process.communicate = AsyncMock(
-            return_value=(b"", b"ERROR: Video unavailable")
-        )
+        mock_process.communicate = AsyncMock(return_value=(b"", b"ERROR: Video unavailable"))
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             with pytest.raises(RuntimeError, match="yt-dlp info fetch failed"):
@@ -261,9 +262,7 @@ class TestGetVideoInfo:
     async def test_invalid_json_response(self):
         mock_process = AsyncMock()
         mock_process.returncode = 0
-        mock_process.communicate = AsyncMock(
-            return_value=(b"not valid json {{{", b"")
-        )
+        mock_process.communicate = AsyncMock(return_value=(b"not valid json {{{", b""))
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             with pytest.raises(RuntimeError, match="Failed to parse yt-dlp JSON"):
@@ -274,9 +273,7 @@ class TestGetVideoInfo:
         mock_process = AsyncMock()
         mock_process.kill = MagicMock()
         mock_process.wait = AsyncMock(return_value=None)
-        mock_process.communicate = AsyncMock(
-            side_effect=asyncio.TimeoutError()
-        )
+        mock_process.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             with pytest.raises(asyncio.TimeoutError):
@@ -319,9 +316,7 @@ class TestDownloadVideo:
     async def test_ytdlp_download_failure(self, temp_dir):
         mock_process = AsyncMock()
         mock_process.returncode = 1
-        mock_process.communicate = AsyncMock(
-            return_value=(b"", b"ERROR: unable to download")
-        )
+        mock_process.communicate = AsyncMock(return_value=(b"", b"ERROR: unable to download"))
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             with pytest.raises(RuntimeError, match="yt-dlp download failed"):
@@ -336,9 +331,7 @@ class TestDownloadVideo:
         mock_process = AsyncMock()
         mock_process.kill = MagicMock()
         mock_process.wait = AsyncMock(return_value=None)
-        mock_process.communicate = AsyncMock(
-            side_effect=asyncio.TimeoutError()
-        )
+        mock_process.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             with pytest.raises(asyncio.TimeoutError):

@@ -10,7 +10,7 @@ compared to standard HTTP clients for large file downloads.
 import asyncio
 import logging
 from pathlib import Path
-from urllib.parse import urlparse, unquote
+from urllib.parse import unquote, urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +51,7 @@ def extract_filename_from_url(url: str) -> str:
     # Filter out empty or suspiciously short filenames
     if not filename or len(filename) < 2 or "." not in filename:
         import time
+
         filename = f"download_{int(time.time())}"
 
     return filename
@@ -98,8 +99,10 @@ async def download_file(
     cmd = [
         "aria2c",
         *opts,
-        "--dir", str(dest_dir),
-        "--out", filename,
+        "--dir",
+        str(dest_dir),
+        "--out",
+        filename,
         "--auto-file-renaming=false",
         url,
     ]
@@ -120,32 +123,22 @@ async def download_file(
     except asyncio.TimeoutError:
         process.kill()
         await process.wait()
-        raise asyncio.TimeoutError(
-            f"Download timed out after 3600 seconds: {url}"
-        )
+        raise asyncio.TimeoutError(f"Download timed out after 3600 seconds: {url}")
 
     if process.returncode != 0:
         error_msg = stderr.decode().strip() or stdout.decode().strip()
-        raise RuntimeError(
-            f"aria2c failed with return code {process.returncode}: {error_msg}"
-        )
+        raise RuntimeError(f"aria2c failed with return code {process.returncode}: {error_msg}")
 
     if not output_path.exists():
         # aria2c might have saved with a different name (e.g., added .1)
         candidates = list(dest_dir.glob(f"{filename}*"))
         if candidates:
             output_path = candidates[0]
-            logger.warning(
-                "aria2c saved file with different name: %s", output_path.name
-            )
+            logger.warning("aria2c saved file with different name: %s", output_path.name)
         else:
-            raise FileNotFoundError(
-                f"Download completed but output file not found: {output_path}"
-            )
+            raise FileNotFoundError(f"Download completed but output file not found: {output_path}")
 
     file_size_mb = output_path.stat().st_size / (1024 * 1024)
-    logger.info(
-        "Download complete: %s (%.2f MB)", output_path.name, file_size_mb
-    )
+    logger.info("Download complete: %s (%.2f MB)", output_path.name, file_size_mb)
 
     return output_path
